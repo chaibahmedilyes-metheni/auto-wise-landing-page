@@ -36,8 +36,8 @@ export default function RegistrationForm() {
         const { count: usersCount } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('role', 'customer');
         
         setLiveStats({
-          garages: garagesCount ? `${garagesCount}+` : '50+',
-          users: usersCount ? `${usersCount}+` : '500+'
+          garages: garagesCount !== null ? garagesCount.toString() : '50+',
+          users: usersCount !== null ? usersCount.toString() : '500+'
         });
       } catch (error) {
         console.error('Failed to fetch real stats:', error);
