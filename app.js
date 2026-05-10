@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
+const { createMailTransport } = require('./lib/mailTransport');
 
 const app = express();
 const distPath = path.join(__dirname, 'dist');
@@ -47,35 +47,6 @@ function buildSpaHtml() {
     return raw;
   }
   return raw.replace('<head>', `<head>\n${script}`);
-}
-
-/** cPanel: use full mailbox email as SMTP_USER; 535 = wrong user/pass or wrong SSL mode. */
-function createMailTransport() {
-  const user = (process.env.SMTP_USER || '').trim();
-  const pass = (process.env.SMTP_PASS || '').trim();
-  if (!user || !pass) {
-    return null;
-  }
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const explicit = (process.env.SMTP_SECURE || '').toLowerCase();
-  let secure;
-  if (explicit === 'false' || explicit === '0') {
-    secure = false;
-  } else if (explicit === 'true' || explicit === '1') {
-    secure = true;
-  } else {
-    secure = port === 465;
-  }
-  const cfg = {
-    host: (process.env.SMTP_HOST || 'localhost').trim(),
-    port,
-    secure,
-    auth: { user, pass },
-  };
-  if (port === 587 && !secure) {
-    cfg.requireTLS = true;
-  }
-  return nodemailer.createTransport(cfg);
 }
 
 let serverSupabase = null;

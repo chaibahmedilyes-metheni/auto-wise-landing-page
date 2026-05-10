@@ -3,8 +3,8 @@ require('dotenv').config({ path: '../.env' }); // For local development, look fo
 
 const express = require('express');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
+const { createMailTransport } = require('../lib/mailTransport');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,17 +18,6 @@ app.use(express.json());
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-// Initialize Nodemailer Transport
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'localhost',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: parseInt(process.env.SMTP_PORT || '465') === 465, // true for 465, false for other ports
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
 app.post('/api/register', async (req, res) => {
   try {
@@ -44,15 +33,17 @@ app.post('/api/register', async (req, res) => {
       .insert([{ email, name, phone, state, workshop_name, role }]);
 
     if (dbError) {
-      // 23505 is the PostgreSQL error code for unique violation
       if (dbError.code === '23505') {
         console.log(`Duplicate registration attempt for email: ${email}`);
-        // We can either return success to avoid leaking information, or return a specific error.
-        // Returning success is often better for landing pages so attackers can't scrape emails.
-      } else {
-        console.error('Supabase Error:', dbError);
-        return res.status(500).json({ error: 'Database error' });
+        return res.status(200).json({
+          success: true,
+          emailSent: false,
+          duplicate: true,
+          message: 'Registration complete',
+        });
       }
+      console.error('Supabase Error:', dbError);
+      return res.status(500).json({ error: 'Database error' });
     }
 
     // 2. Prepare the Email Content
@@ -134,13 +125,34 @@ app.post('/api/register', async (req, res) => {
       ]
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent successfully to ${email} [ID: ${info.messageId}]`);
+    const transporter = createMailTransport();
+    if (!transporter) {
+      console.warn('[AutoWise] SMTP_USER/SMTP_PASS not set — lead saved, welcome email skipped');
+      return res.status(200).json({
+        success: true,
+        emailSent: false,
+        message: 'Registration complete',
+      });
+    }
 
-    return res.status(200).json({ success: true, message: 'Registration complete' });
-
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`Email sent successfully to ${email} [ID: ${info.messageId}]`);
+      return res.status(200).json({
+        success: true,
+        emailSent: true,
+        message: 'Registration complete',
+      });
+    } catch (mailErr) {
+      console.error('[AutoWise] Welcome email failed (lead saved):', mailErr?.message || mailErr);
+      return res.status(200).json({
+        success: true,
+        emailSent: false,
+        message: 'Registration complete',
+      });
+    }
   } catch (error) {
-    console.error('Registration Flow Error:', error);
+    console.error('server/index registration error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
