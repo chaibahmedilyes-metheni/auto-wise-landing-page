@@ -1,40 +1,80 @@
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const distPath = path.join(__dirname, 'dist');
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Serve static frontend files from /dist
-app.use(express.static(path.join(__dirname, 'dist')));
+function getSupabaseEnv() {
+  const url = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const anonKey = (
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_KEY ||
+    ''
+  ).trim();
+  return { url, anonKey };
+}
 
-// Initialize Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+function buildSpaHtml() {
+  const indexPath = path.join(distPath, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    return '<!DOCTYPE html><html><body><h1>Missing dist/index.html — run <code>npm run build</code> in the app root.</h1></body></html>';
+  }
+  const raw = fs.readFileSync(indexPath, 'utf8');
+  const { url, anonKey } = getSupabaseEnv();
+  const payload = JSON.stringify({ url, anonKey });
+  const script = `    <script>window.__AUTOWISE_SUPABASE__=${payload};</script>`;
+  if (raw.includes('__AUTOWISE_SUPABASE__')) {
+    return raw;
+  }
+  return raw.replace('<head>', `<head>\n${script}`);
+}
 
-// Initialize Nodemailer Transport
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'localhost',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: parseInt(process.env.SMTP_PORT || '465') === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+let serverSupabase = null;
+function getServerSupabase() {
+  if (serverSupabase) {
+    return serverSupabase;
+  }
+  const { url, anonKey } = getSupabaseEnv();
+  if (!url || !anonKey) {
+    return null;
+  }
+  serverSupabase = createClient(url, anonKey);
+  return serverSupabase;
+}
 
 // ─── API Routes ────────────────────────────────────────────────
 
 app.post('/api/register', async (req, res) => {
+  const supabase = getServerSupabase();
+  if (!supabase) {
+    return res.status(503).json({
+      error: 'Server misconfigured',
+      message: 'Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY (or SUPABASE_URL and SUPABASE_KEY) in cPanel Node environment variables or in .env',
+    });
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'localhost',
+    port: parseInt(process.env.SMTP_PORT || '465', 10),
+    secure: parseInt(process.env.SMTP_PORT || '465', 10) === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
   try {
     const { email, name, phone, state, workshop_name, role, lang } = req.body;
 
@@ -42,13 +82,11 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // 1. Insert into Supabase
     const { error: dbError } = await supabase
       .from('leads')
       .insert([{ email, name, phone, state, workshop_name, role }]);
 
     if (dbError) {
-      // 23505 is the PostgreSQL error code for unique violation
       if (dbError.code === '23505') {
         console.log(`Duplicate registration attempt for email: ${email}`);
       } else {
@@ -57,12 +95,11 @@ app.post('/api/register', async (req, res) => {
       }
     }
 
-    // 2. Prepare the Email Content
     const isFr = lang === 'fr';
     const isGarage = role === 'garage_owner';
-    
-    const subject = isFr 
-      ? `Bienvenue chez Auto Wise, ${name} !` 
+
+    const subject = isFr
+      ? `Bienvenue chez Auto Wise, ${name} !`
       : `مرحباً بك في Auto Wise، ${name}!`;
 
     const bodyText = isFr
@@ -71,7 +108,7 @@ app.post('/api/register', async (req, res) => {
 
     const direction = isFr ? 'ltr' : 'rtl';
     const fontFamily = isFr ? 'Arial, sans-serif' : 'Tahoma, Arial, sans-serif';
-    
+
     const bodyHtml = `
       <!DOCTYPE html>
       <html lang="${lang}" dir="${direction}">
@@ -98,14 +135,14 @@ app.post('/api/register', async (req, res) => {
           <div class="content">
             <h2>${isFr ? 'Bonjour' : 'مرحباً'} ${name},</h2>
             <p>
-              ${isFr 
-                ? `Merci d'avoir rejoint la liste d'attente exclusive de <strong>Auto Wise</strong>${isGarage ? ' en tant que garage partenaire' : ''}. Nous sommes ravis de vous compter parmi nous.`
-                : `شكراً لانضمامك إلى قائمة الانتظار الحصرية لـ <strong>Auto Wise</strong>${isGarage ? ' كورشة معتمدة' : ''}. نحن سعداء بوجودك معنا.`}
+              ${isFr
+        ? `Merci d'avoir rejoint la liste d'attente exclusive de <strong>Auto Wise</strong>${isGarage ? ' en tant que garage partenaire' : ''}. Nous sommes ravis de vous compter parmi nous.`
+        : `شكراً لانضمامك إلى قائمة الانتظار الحصرية لـ <strong>Auto Wise</strong>${isGarage ? ' كورشة معتمدة' : ''}. نحن سعداء بوجودك معنا.`}
             </p>
             <p>
               ${isFr
-                ? `Nous finalisons actuellement les derniers détails pour vous offrir la meilleure expérience possible. Vous serez le premier informé dès notre lancement officiel !`
-                : `نحن نضع حالياً اللمسات الأخيرة لتقديم أفضل تجربة ممكنة. ستكون أول من يعلم فور إطلاقنا الرسمي!`}
+        ? `Nous finalisons actuellement les derniers détails pour vous offrir la meilleure expérience possible. Vous serez le premier informé dès notre lancement officiel !`
+        : `نحن نضع حالياً اللمسات الأخيرة لتقديم أفضل تجربة ممكنة. ستكون أول من يعلم فور إطلاقنا الرسمي!`}
             </p>
           </div>
           <div class="footer">
@@ -117,41 +154,86 @@ app.post('/api/register', async (req, res) => {
       </html>
     `;
 
-    // 3. Send the Email
+    const logoPath = path.join(__dirname, 'public', 'assets', 'Auto wise logo.png');
+    const attachments = [];
+    if (fs.existsSync(logoPath)) {
+      attachments.push({
+        filename: 'logo.png',
+        path: logoPath,
+        cid: 'autowiselogo',
+      });
+    }
+
     const mailOptions = {
       from: `"Auto Wise" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to: email,
-      subject: subject,
+      subject,
       text: bodyText,
       html: bodyHtml,
-      attachments: [
-        {
-          filename: 'logo.png',
-          path: path.join(__dirname, 'public/assets/Auto wise logo.png'),
-          cid: 'autowiselogo'
-        }
-      ]
+      attachments,
     };
 
     const info = await transporter.sendMail(mailOptions);
     console.log(`Email sent successfully to ${email} [ID: ${info.messageId}]`);
 
     return res.status(200).json({ success: true, message: 'Registration complete' });
-
   } catch (error) {
     console.error('Registration Flow Error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ─── SPA Fallback — serve index.html for all non-API routes ───
+// ─── Static assets (do not serve dist/index.html here, or injection is skipped) ───
 
-app.get('/{*path}', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+app.use('/assets', express.static(path.join(distPath, 'assets')));
+
+['favicon.svg', 'icons.svg'].forEach((name) => {
+  app.get(`/${name}`, (req, res, next) => {
+    const fp = path.join(distPath, name);
+    if (fs.existsSync(fp)) {
+      res.sendFile(fp, next);
+    } else {
+      next();
+    }
+  });
+});
+
+// ─── SPA: inject Supabase for browser bundle (Vite only inlines env at build time) ───
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return next();
+  }
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  if (req.path.startsWith('/assets/')) {
+    return next();
+  }
+
+  const rel = req.path === '/' ? '' : req.path.replace(/^\//, '');
+  if (rel && !rel.includes('..')) {
+    const fp = path.join(distPath, rel);
+    try {
+      if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+        return res.sendFile(path.resolve(fp));
+      }
+    } catch (_) {
+      /* fall through to SPA */
+    }
+  }
+
+  res.type('html').send(buildSpaHtml());
 });
 
 // ─── Start Server ──────────────────────────────────────────────
 
 app.listen(PORT, () => {
+  const { url, anonKey } = getSupabaseEnv();
   console.log(`🚀 Auto Wise Backend running on port ${PORT}`);
+  if (!url || !anonKey) {
+    console.warn(
+      '⚠️  Supabase env missing: set VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY in .env or cPanel Node environment (page will error until set).',
+    );
+  }
 });
