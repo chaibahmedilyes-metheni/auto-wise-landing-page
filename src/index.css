@@ -1,0 +1,318 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cairo:wght@400;500;600;700;800&display=swap');
+
+/* ══════════════════════════════════════════
+   DESIGN SYSTEM — Auto Wise × Uber Style
+   Brand: #FA4B1C / #212CFA / #FFFFFF
+   Flat, bold, pill-shaped, no gradients.
+   ══════════════════════════════════════════ */
+
+:root {
+  /* Brand */
+  --brand-primary: #FA4B1C;
+  --brand-secondary: #212CFA;
+  --white: #FFFFFF;
+  --black: #111111;
+
+  /* Surfaces — white-first, flat */
+  --bg-page: #FFFFFF;
+  --bg-dark: #000000;
+  --bg-footer: #000000;
+
+  /* Chips / secondary surfaces */
+  --chip-bg: #eeeeee;
+  --chip-bg-hover: #e2e2e2;
+
+  /* Text */
+  --text-primary: #111111;
+  --text-secondary: #4b4b4b;
+  --text-muted: #8a8a8a;
+  --text-on-brand: #FFFFFF;
+
+  /* Borders */
+  --border: #e0e0e0;
+  --border-strong: #111111;
+
+  /* Feedback */
+  --error: #dc2626;
+  --success: #16a34a;
+
+  /* Shadows — whisper-soft per Uber system */
+  --shadow-card: rgba(0, 0, 0, 0.08) 0px 2px 12px;
+  --shadow-elevated: rgba(0, 0, 0, 0.12) 0px 4px 16px;
+  --shadow-float: rgba(0, 0, 0, 0.16) 0px 2px 8px;
+
+  /* Typography */
+  --font-heading: 'Inter', system-ui, -apple-system, Helvetica Neue, Arial, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, Helvetica Neue, Arial, sans-serif;
+  --font-ar: 'Cairo', 'Inter', system-ui, sans-serif;
+
+  /* Layout */
+  --container-max: 1136px;
+  --section-spacing: 80px;
+  --radius-card: 8px;
+  --radius-card-lg: 12px;
+  --radius-pill: 999px;
+}
+
+/* ─── Reset ─── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html[dir="rtl"] {
+  font-family: var(--font-ar);
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+  background: var(--bg-page);
+}
+
+a { color: inherit; text-decoration: none; }
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  color: inherit;
+  font-size: inherit;
+}
+
+img { max-width: 100%; height: auto; display: block; }
+
+/* ─── Typography — strict hierarchy, Inter as UberMove substitute ─── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+html[dir="rtl"] h1,
+html[dir="rtl"] h2,
+html[dir="rtl"] h3,
+html[dir="rtl"] h4 {
+  font-family: var(--font-ar);
+}
+
+/* Display / Hero */
+h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* Section Heading */
+h2 {
+  font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+}
+
+/* Card Title */
+h3 {
+  font-size: 1.25rem;
+  line-height: 1.33;
+}
+
+/* Sub-heading */
+h4 {
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.text-secondary { color: var(--text-secondary); }
+.text-muted { color: var(--text-muted); }
+
+/* ─── Layout ─── */
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+section {
+  padding: var(--section-spacing) 0;
+}
+
+/* ─── Buttons — pill-shaped, flat, no gradients ─── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+  font-size: 1rem;
+  line-height: 1.25;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+/* Primary — brand orange pill */
+.btn-primary {
+  background-color: var(--brand-primary);
+  color: var(--text-on-brand);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #e04318;
+}
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary — white pill on dark, or outlined */
+.btn-secondary {
+  background-color: var(--white);
+  color: var(--text-primary);
+}
+.btn-secondary:hover {
+  background-color: #e2e2e2;
+}
+
+/* Outline — black border pill */
+.btn-outline {
+  background-color: transparent;
+  color: var(--text-primary);
+  border: 2px solid var(--text-primary);
+}
+.btn-outline:hover {
+  background-color: var(--chip-bg);
+}
+
+/* Chip — filter/nav pill */
+.btn-chip {
+  background-color: var(--chip-bg);
+  color: var(--text-primary);
+  padding: 10px 20px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.btn-chip:hover {
+  background-color: var(--chip-bg-hover);
+}
+.btn-chip.active {
+  background-color: var(--brand-primary);
+  color: var(--text-on-brand);
+}
+
+/* ─── Forms — black border, white bg, 8px radius ─── */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  background-color: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 1rem;
+  transition: border-color 0.15s ease;
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+}
+
+.form-error {
+  color: var(--error);
+  font-size: 0.8rem;
+}
+
+/* ─── Cards — white, whisper shadow, 8-12px radius ─── */
+.card {
+  background-color: var(--white);
+  border-radius: var(--radius-card-lg);
+  padding: 32px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-elevated);
+}
+
+/* ─── Utility classes ─── */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.gap-4 { gap: 16px; }
+.gap-6 { gap: 24px; }
+.gap-8 { gap: 32px; }
+.text-center { text-align: center; }
+
+/* ─── Responsive ─── */
+.hidden-mobile { display: none; }
+.hidden-desktop { display: flex; }
+
+@media (min-width: 768px) {
+  .hidden-mobile { display: flex; }
+  .hidden-desktop { display: none; }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --section-spacing: 56px;
+  }
+  .container {
+    padding: 0 16px;
+  }
+  .card {
+    padding: 24px;
+  }
+}
+
+/* ─── Scrollbar (minimal) ─── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-page); }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #999; }
+
+/* ─── Selection ─── */
+::selection {
+  background: rgba(250, 75, 28, 0.15);
+  color: var(--text-primary);
+}
