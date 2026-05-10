@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Minus } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 function FAQItem({ question, answer, isOpen, onClick }) {
   return (
@@ -68,16 +69,45 @@ function FAQItem({ question, answer, isOpen, onClick }) {
 }
 
 export default function FAQ() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [openIndex, setOpenIndex] = useState(0);
+  const [faqs, setFaqs] = useState([]);
 
-  const faqs = [
+  // Hardcoded fallback FAQs from translations
+  const fallbackFaqs = [
     { q: t('faq_1_q'), a: t('faq_1_a') },
     { q: t('faq_2_q'), a: t('faq_2_a') },
     { q: t('faq_3_q'), a: t('faq_3_a') },
     { q: t('faq_4_q'), a: t('faq_4_a') },
     { q: t('faq_5_q'), a: t('faq_5_a') },
   ];
+
+  useEffect(() => {
+    const fetchFAQs = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('faqs')
+          .select('*')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+
+        if (error || !data || data.length === 0) {
+          setFaqs(fallbackFaqs);
+          return;
+        }
+
+        const isAr = i18n.language === 'ar';
+        setFaqs(data.map(f => ({
+          q: isAr ? f.question_ar : f.question_fr,
+          a: isAr ? f.answer_ar : f.answer_fr,
+        })));
+      } catch {
+        setFaqs(fallbackFaqs);
+      }
+    };
+
+    fetchFAQs();
+  }, [i18n.language]);
 
   return (
     <section id="faq" style={{ backgroundColor: 'var(--chip-bg)' }}>
@@ -107,3 +137,4 @@ export default function FAQ() {
     </section>
   );
 }
+
