@@ -8,7 +8,6 @@ const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 const distPath = path.join(__dirname, 'dist');
 
 // Middleware
@@ -50,6 +49,35 @@ function buildSpaHtml() {
   return raw.replace('<head>', `<head>\n${script}`);
 }
 
+/** cPanel: use full mailbox email as SMTP_USER; 535 = wrong user/pass or wrong SSL mode. */
+function createMailTransport() {
+  const user = (process.env.SMTP_USER || '').trim();
+  const pass = (process.env.SMTP_PASS || '').trim();
+  if (!user || !pass) {
+    return null;
+  }
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const explicit = (process.env.SMTP_SECURE || '').toLowerCase();
+  let secure;
+  if (explicit === 'false' || explicit === '0') {
+    secure = false;
+  } else if (explicit === 'true' || explicit === '1') {
+    secure = true;
+  } else {
+    secure = port === 465;
+  }
+  const cfg = {
+    host: (process.env.SMTP_HOST || 'localhost').trim(),
+    port,
+    secure,
+    auth: { user, pass },
+  };
+  if (port === 587 && !secure) {
+    cfg.requireTLS = true;
+  }
+  return nodemailer.createTransport(cfg);
+}
+
 let serverSupabase = null;
 function getServerSupabase() {
   if (serverSupabase) {
@@ -74,23 +102,13 @@ app.post('/api/register', async (req, res) => {
     });
   }
 
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'localhost',
-    port: parseInt(process.env.SMTP_PORT || '465', 10),
-    secure: parseInt(process.env.SMTP_PORT || '465', 10) === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  const { email, name, phone, state, workshop_name, role, lang } = req.body;
+
+  if (!email || !name || !role) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
 
   try {
-    const { email, name, phone, state, workshop_name, role, lang } = req.body;
-
-    if (!email || !name || !role) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
     const { error: dbError } = await supabase
       .from('leads')
       .insert([{ email, name, phone, state, workshop_name, role }]);
@@ -98,12 +116,34 @@ app.post('/api/register', async (req, res) => {
     if (dbError) {
       if (dbError.code === '23505') {
         console.log(`Duplicate registration attempt for email: ${email}`);
-      } else {
-        console.error('Supabase Error:', dbError);
-        return res.status(500).json({ error: 'Database error' });
+        return res.status(200).json({
+          success: true,
+          emailSent: false,
+          duplicate: true,
+          message: 'Registration complete',
+        });
       }
+      console.error('Supabase Error:', dbError);
+      return res.status(500).json({ error: 'Database error' });
     }
+  } catch (dbErr) {
+    console.error('Registration DB Error:', dbErr);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 
+  if (
+    process.env.SKIP_WELCOME_EMAIL === '1' ||
+    process.env.AUTOWISE_SKIP_WELCOME_EMAIL === '1'
+  ) {
+    console.warn('[AutoWise] Welcome email disabled (SKIP_WELCOME_EMAIL / AUTOWISE_SKIP_WELCOME_EMAIL=1)');
+    return res.status(200).json({
+      success: true,
+      emailSent: false,
+      message: 'Registration complete',
+    });
+  }
+
+  try {
     const isFr = lang === 'fr';
     const isGarage = role === 'garage_owner';
 
@@ -182,13 +222,35 @@ app.post('/api/register', async (req, res) => {
       attachments,
     };
 
+    const transporter = createMailTransport();
+    if (!transporter) {
+      console.warn('[AutoWise] SMTP_USER/SMTP_PASS not set — lead saved, welcome email skipped');
+      return res.status(200).json({
+        success: true,
+        emailSent: false,
+        message: 'Registration complete',
+      });
+    }
+
     const info = await transporter.sendMail(mailOptions);
     console.log(`Email sent successfully to ${email} [ID: ${info.messageId}]`);
-
-    return res.status(200).json({ success: true, message: 'Registration complete' });
-  } catch (error) {
-    console.error('Registration Flow Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(200).json({
+      success: true,
+      emailSent: true,
+      message: 'Registration complete',
+    });
+  } catch (mailErr) {
+    console.error('[AutoWise] Welcome email failed (lead saved):', mailErr?.message || mailErr);
+    if (mailErr?.responseCode === 535 || mailErr?.code === 'EAUTH') {
+      console.error(
+        '[AutoWise] SMTP 535: fix SMTP_USER/SMTP_PASS in cPanel, or try SMTP_PORT=587 + SMTP_SECURE=false; bypass email: SKIP_WELCOME_EMAIL=1',
+      );
+    }
+    return res.status(200).json({
+      success: true,
+      emailSent: false,
+      message: 'Registration complete',
+    });
   }
 });
 
@@ -256,8 +318,11 @@ app.use((req, res) => {
 });
 
 // ─── Start Server ──────────────────────────────────────────────
-// Phusion Passenger (cPanel Node.js) requires listening on the "passenger" socket,
-// not a bare TCP port. See: https://www.phusionpassenger.com/library/deploy/nodejs/reverse_proxy.html
+// Phusion Passenger (cPanel Node.js) must use app.listen('passenger'), not a local TCP port.
+// cPanel often does NOT define the PhusionPassenger global before this file runs, but it does set
+// PASSENGER_* env vars — so we detect those too. Manual override: AUTOWISE_PASSENGER=1
+// https://www.phusionpassenger.com/library/deploy/nodejs/reverse_proxy.html
+// https://www.phusionpassenger.com/library/indepth/environment_variables.html
 
 function logStartup(where) {
   const { url, anonKey } = getSupabaseEnv();
@@ -269,13 +334,49 @@ function logStartup(where) {
   }
 }
 
-if (typeof PhusionPassenger !== 'undefined') {
-  PhusionPassenger.configure({ autoInstall: false });
-  app.listen('passenger', () => {
-    logStartup('Passenger');
-  });
-} else {
-  app.listen(PORT, () => {
-    logStartup(`port ${PORT}`);
+function isPassengerManaged() {
+  if (typeof PhusionPassenger !== 'undefined') {
+    return true;
+  }
+  if (typeof global !== 'undefined' && typeof global.PhusionPassenger !== 'undefined') {
+    return true;
+  }
+  if (process.env.AUTOWISE_PASSENGER === '1' || process.env.AUTOWISE_PASSENGER === 'true') {
+    return true;
+  }
+  if (process.env.PASSENGER_APP_ROOT) {
+    return true;
+  }
+  if (process.env.PASSENGER_INSTANCE_REGISTRY_DIR) {
+    return true;
+  }
+  if (process.env.IN_PASSENGER === '1') {
+    return true;
+  }
+  return false;
+}
+
+function startHttpServer() {
+  const passengerMode = isPassengerManaged();
+  console.log(
+    `[AutoWise] HTTP listen: ${passengerMode ? "passenger (Phusion Passenger)" : `tcp port ${Number(process.env.PORT) || 3001}`}`,
+  );
+
+  if (passengerMode) {
+    if (typeof PhusionPassenger !== 'undefined') {
+      PhusionPassenger.configure({ autoInstall: false });
+    }
+    app.listen('passenger', () => {
+      logStartup('Passenger');
+    });
+    return;
+  }
+
+  const port = Number(process.env.PORT) || 3001;
+  app.listen(port, () => {
+    logStartup(`port ${port}`);
   });
 }
+
+// Defer one tick: on some hosts Passenger env/global is visible only after the module loads.
+setImmediate(startHttpServer);
