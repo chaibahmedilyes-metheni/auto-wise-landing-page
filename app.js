@@ -256,13 +256,26 @@ app.use((req, res) => {
 });
 
 // ─── Start Server ──────────────────────────────────────────────
+// Phusion Passenger (cPanel Node.js) requires listening on the "passenger" socket,
+// not a bare TCP port. See: https://www.phusionpassenger.com/library/deploy/nodejs/reverse_proxy.html
 
-app.listen(PORT, () => {
+function logStartup(where) {
   const { url, anonKey } = getSupabaseEnv();
-  console.log(`🚀 Auto Wise Backend running on port ${PORT}`);
+  console.log(`🚀 Auto Wise Backend (${where})`);
   if (!url || !anonKey) {
     console.warn(
       '⚠️  Supabase env missing: set VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY in .env or cPanel Node environment (page will error until set).',
     );
   }
-});
+}
+
+if (typeof PhusionPassenger !== 'undefined') {
+  PhusionPassenger.configure({ autoInstall: false });
+  app.listen('passenger', () => {
+    logStartup('Passenger');
+  });
+} else {
+  app.listen(PORT, () => {
+    logStartup(`port ${PORT}`);
+  });
+}
