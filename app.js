@@ -15,6 +15,15 @@ const distPath = path.join(__dirname, 'dist');
 app.use(cors());
 app.use(express.json());
 
+// Plain response for uptime / cPanel post-install checks (avoid HTML-only probes failing)
+function sendPlainOk(req, res) {
+  res.status(200).type('text/plain; charset=utf-8').send('ok\n');
+}
+app.get('/health', sendPlainOk);
+app.head('/health', (req, res) => {
+  res.status(200).type('text/plain; charset=utf-8').end();
+});
+
 function getSupabaseEnv() {
   const url = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const anonKey = (
@@ -201,29 +210,49 @@ app.use('/assets', express.static(path.join(distPath, 'assets')));
 // ─── SPA: inject Supabase for browser bundle (Vite only inlines env at build time) ───
 
 app.use((req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    return next();
-  }
-  if (req.path.startsWith('/api')) {
-    return next();
-  }
-  if (req.path.startsWith('/assets/')) {
-    return next();
-  }
+  try {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return next();
+    }
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    if (req.path.startsWith('/assets/')) {
+      return next();
+    }
 
-  const rel = req.path === '/' ? '' : req.path.replace(/^\//, '');
-  if (rel && !rel.includes('..')) {
-    const fp = path.join(distPath, rel);
-    try {
-      if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
-        return res.sendFile(path.resolve(fp));
+    const rel = req.path === '/' ? '' : req.path.replace(/^\//, '');
+    if (rel && !rel.includes('..')) {
+      const fp = path.join(distPath, rel);
+      try {
+        if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+          return res.sendFile(path.resolve(fp), (err) => {
+            if (err && !res.headersSent) {
+              console.error('[AutoWise] sendFile', fp, err);
+              res.type('html').send(buildSpaHtml());
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[AutoWise] static file check', e);
       }
-    } catch (_) {
-      /* fall through to SPA */
+    }
+
+    const html = buildSpaHtml();
+    return res.type('html').send(html);
+  } catch (err) {
+    console.error('[AutoWise] SPA handler', req.method, req.path, err);
+    if (!res.headersSent) {
+      res.status(500).type('text/plain; charset=utf-8').send('Internal Server Error\n');
     }
   }
+});
 
-  res.type('html').send(buildSpaHtml());
+// Unmatched GET (e.g. /api/foo) after middleware above — return 404 without HTML mismatch noise
+app.use((req, res) => {
+  if (!res.headersSent) {
+    res.status(404).type('text/plain; charset=utf-8').send('Not Found\n');
+  }
 });
 
 // ─── Start Server ──────────────────────────────────────────────
