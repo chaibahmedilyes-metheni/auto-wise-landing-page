@@ -1,7 +1,11 @@
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Overview from './pages/Overview';
+import Users from './pages/Users';
+import Garages from './pages/Garages';
+import Bookings from './pages/Bookings';
+import Settings from './pages/Settings';
 import './Admin.css';
 
 export default function AdminDashboard() {
@@ -13,7 +17,10 @@ export default function AdminDashboard() {
         <div className="admin-content">
           <Routes>
             <Route path="/" element={<Overview />} />
-            {/* Additional routes will go here (Garages, Users, Settings, etc.) */}
+            <Route path="/users" element={<Users />} />
+            <Route path="/garages" element={<Garages />} />
+            <Route path="/bookings" element={<Bookings />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>
       </div>
